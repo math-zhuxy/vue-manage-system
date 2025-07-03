@@ -7,7 +7,7 @@
                 <button class="edit-btn" @click="showEditDialog = true">
                     编辑数据
                 </button>
-                <button class="edit-btn" @click="() => chartData.push(Math.floor(Math.random() * 100))">
+                <button class="edit-btn" @click="() => chartData.push(Math.floor(Math.random() * 250))">
                     插入数据
                 </button>
                 <button class="edit-btn" @click="() => chartData.pop()">
@@ -47,7 +47,15 @@
         </div>
         <br><br><br>
         <div class="predict-chart-container">
-            <h2>未来趋势</h2>
+            <div style="display: flex; gap: 20px; align-items: center;">
+                <h2>未来趋势</h2>
+                <el-radio-group v-model="ModelMethod" style="border: 1px solid black; padding: 5px; border-radius:15px;">
+                    <el-radio value="1" size="large">线性回归</el-radio>
+                    <el-radio value="2" size="large">指数回归</el-radio>
+                    <el-radio value="3" size="large">多项式回归</el-radio>
+                    <el-radio value="4" size="large">ARIMA回归</el-radio>
+                </el-radio-group>
+            </div>
             <v-chart class="map-chart" :option="predictOptions" />
         </div>
 
@@ -86,6 +94,8 @@ import {
     GridComponent
 } from 'echarts/components';
 import * as echarts from 'echarts/core';
+
+const ModelMethod = ref('1')
 
 // 注册必要的组件
 use([
@@ -177,41 +187,172 @@ const mapOptions = computed(() => ({
     ],
 }));
 
-// const predictData = ref([120, 132, 301, 134, 500, 230, 210]);
+// 线性回归预测
+function linearRegression(data) {
+    const n = data.length;
+    const x = Array.from({ length: n }, (_, i) => i);
+    const y = data;
+
+    const sumX = x.reduce((sum, val) => sum + val, 0);
+    const sumY = y.reduce((sum, val) => sum + val, 0);
+    const sumXY = x.reduce((sum, val, i) => sum + val * y[i], 0);
+    const sumXX = x.reduce((sum, val) => sum + val * val, 0);
+
+    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+
+    return slope * n + intercept;
+}
+
+// 指数平滑预测
+function exponentialSmoothing(data, alpha) {
+    if (data.length === 0) return 0;
+
+    let smoothed = data[0];
+    for (let i = 1; i < data.length; i++) {
+        smoothed = alpha * data[i] + (1 - alpha) * smoothed;
+    }
+
+    // 计算趋势
+    const recent = data.slice(-Math.min(5, data.length));
+    const trend = recent.length > 1 ?
+        (recent[recent.length - 1] - recent[0]) / (recent.length - 1) : 0;
+
+    return smoothed + trend;
+}
+
+// 多项式回归预测
+function polynomialRegression(data, degree) {
+    const n = data.length;
+    if (n < degree + 1) return data[n - 1];
+
+    // 使用最小二乘法拟合多项式
+    const x = Array.from({ length: n }, (_, i) => i);
+    const y = data;
+
+    // 构建范德蒙德矩阵
+    const matrix = [];
+    const target = [];
+
+    for (let i = 0; i < n; i++) {
+        const row = [];
+        for (let j = 0; j <= degree; j++) {
+            row.push(Math.pow(x[i], j));
+        }
+        matrix.push(row);
+        target.push(y[i]);
+    }
+
+    // 简化的多项式拟合 (仅处理二次)
+    if (degree === 2 && n >= 3) {
+        const x1 = x[n - 3], y1 = y[n - 3];
+        const x2 = x[n - 2], y2 = y[n - 2];
+        const x3 = x[n - 1], y3 = y[n - 1];
+
+        // 二次函数拟合: y = ax² + bx + c
+        const denom = (x1 - x2) * (x1 - x3) * (x2 - x3);
+        if (Math.abs(denom) < 1e-10) return y3 + (y3 - y2);
+
+        const a = (x3 * (y2 - y1) + x2 * (y1 - y3) + x1 * (y3 - y2)) / denom;
+        const b = (x3 * x3 * (y1 - y2) + x2 * x2 * (y3 - y1) + x1 * x1 * (y2 - y3)) / denom;
+        const c = (x2 * x3 * (x2 - x3) * y1 + x3 * x1 * (x3 - x1) * y2 + x1 * x2 * (x1 - x2) * y3) / denom;
+
+        const nextX = n;
+        return a * nextX * nextX + b * nextX + c;
+    }
+
+    return data[n - 1];
+}
+
+// ARIMA简化版本 (自回归移动平均)
+function arimaSimplified(data) {
+    const n = data.length;
+    if (n < 3) return data[n - 1];
+
+    // AR(2) 模型: y(t) = φ1*y(t-1) + φ2*y(t-2) + ε
+    const y1 = data[n - 1];
+    const y2 = data[n - 2];
+
+    // 简单的AR系数估计
+    const phi1 = 0.7; // 一阶自回归系数
+    const phi2 = 0.2; // 二阶自回归系数
+
+    // 计算残差的移动平均
+    const errors = [];
+    for (let i = 2; i < n; i++) {
+        const predicted = phi1 * data[i - 1] + phi2 * data[i - 2];
+        errors.push(data[i] - predicted);
+    }
+
+    const avgError = errors.length > 0 ?
+        errors.reduce((sum, err) => sum + err, 0) / errors.length : 0;
+
+    // MA(1) 组件
+    const theta = 0.3; // 移动平均系数
+    const prediction = phi1 * y1 + phi2 * y2 + theta * avgError;
+
+    return prediction;
+}
 
 const predictData = computed(() => {
     const data = chartData.value;
-    if (data.length < 2) return [];
-    
     const predictions = [];
-    const windowSize = Math.min(3, data.length); // 使用最近3个点或全部点
-    
+
+    // 确保有足够的数据进行预测
+    if (data.length < 3) return Array(5).fill(data[data.length - 1] || 0);
+
     for (let i = 0; i < 5; i++) {
         let predictedValue;
-        
-        if (i % 2 === 0) {
-            // 使用线性趋势预测
-            const recentData = [...data, ...predictions];
-            const len = recentData.length;
-            const x1 = len - windowSize, y1 = recentData[len - windowSize];
-            const x2 = len - 1, y2 = recentData[len - 1];
-            
-            // 计算斜率
-            const slope = (y2 - y1) / (x2 - x1);
-            predictedValue = y2 + slope;
-        } else {
-            const lastValues = [...data, ...predictions];
-            const sum = lastValues.slice(-windowSize).reduce((acc, val) => acc + val, 0);
-            predictedValue = sum / Math.min(windowSize, lastValues.length);
+        const currentData = [...data, ...predictions];
+        const len = currentData.length;
+
+        switch (ModelMethod.value) {
+            case '1': // 线性回归
+                predictedValue = linearRegression(currentData);
+                break;
+            case '2': // 指数平滑
+                predictedValue = exponentialSmoothing(currentData, 0.3);
+                break;
+            case '3': // 多项式回归 (二次)
+                predictedValue = polynomialRegression(currentData, 2);
+                break;
+            case '4': // ARIMA简化版本
+                predictedValue = arimaSimplified(currentData);
+                break;
         }
-        
-        // 添加一些随机波动，使预测更真实
-        const noise = (Math.random() - 0.5) * 20;
+
+        // 季节性调整 (模拟周期性波动)
+        const seasonalFactor = Math.sin((len + i) * Math.PI / 6) * 0.1 + 1;
+        predictedValue *= seasonalFactor;
+
+        // 趋势衰减 (距离越远，趋势影响越小)
+        const trendDecay = Math.exp(-i * 0.1);
+        const baseline = currentData.slice(-Math.min(5, currentData.length))
+            .reduce((sum, val) => sum + val, 0) / Math.min(5, currentData.length);
+
+        predictedValue = baseline + (predictedValue - baseline) * trendDecay;
+
+        // 添加渐减的随机噪声
+        const noiseIntensity = 15 * Math.exp(-i * 0.3);
+        const noise = (Math.random() - 0.5) * noiseIntensity;
+
+        // 确保预测值合理
         predictedValue = Math.max(0, Math.round(predictedValue + noise));
-        
+
+        // 异常值检测和修正
+        if (predictions.length > 0) {
+            const lastPrediction = predictions[predictions.length - 1];
+            const maxChange = Math.abs(lastPrediction * 0.3); // 最大变化30%
+
+            if (Math.abs(predictedValue - lastPrediction) > maxChange) {
+                const direction = predictedValue > lastPrediction ? 1 : -1;
+                predictedValue = lastPrediction + direction * maxChange;
+            }
+        }
+
         predictions.push(predictedValue);
     }
-    
+
     return predictions;
 });
 
