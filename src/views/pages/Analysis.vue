@@ -2,17 +2,61 @@
     <div class="analysis-container">
         <!-- 顶部工具栏 -->
         <div class="toolbar">
-            <h2 class="title">数据分析</h2>
-            <div style="display: flex; gap: 20px;">
+            <h2 class="title">订单数据分析</h2>
+            <div style="display: flex; gap: 20px; align-items: center;">
+                <!-- 日期筛选 -->
+                <div class="date-filter">
+                    <el-date-picker
+                        v-model="dateRange"
+                        type="daterange"
+                        range-separator="至"
+                        start-placeholder="开始日期"
+                        end-placeholder="结束日期"
+                        size="small"
+                        @change="filterDataByDate"
+                    />
+                </div>
+                
+                <!-- 数据类型选择 -->
+                <el-select v-model="dataType" placeholder="数据类型" size="small" style="width: 120px;" @change="switchDataType">
+                    <el-option label="订单金额" value="amount" />
+                    <el-option label="订单数量" value="count" />
+                    <el-option label="客户数" value="customers" />
+                </el-select>
+
                 <button class="edit-btn" @click="showEditDialog = true">
                     编辑数据
                 </button>
-                <button class="edit-btn" @click="() => chartData.push(Math.floor(Math.random() * 250))">
+                <button class="edit-btn" @click="insertRandomData">
                     插入数据
                 </button>
                 <button class="edit-btn" @click="() => chartData.pop()">
                     删除数据
                 </button>
+                <button class="edit-btn" @click="exportData">
+                    导出数据
+                </button>
+                <button class="edit-btn" @click="refreshData">
+                    刷新数据
+                </button>
+            </div>
+        </div>
+
+        <!-- 快速统计卡片 -->
+        <div class="quick-stats">
+            <div class="quick-stat-item">
+                <div class="trend-indicator" :class="trendClass">
+                    {{ trendDirection }} {{ Math.abs(trendPercentage).toFixed(1) }}%
+                </div>
+                <div class="quick-stat-label">{{ periodLabel }}趋势</div>
+            </div>
+            <div class="quick-stat-item">
+                <div class="quick-stat-value">{{ statistics.growth.toFixed(1) }}%</div>
+                <div class="quick-stat-label">环比增长</div>
+            </div>
+            <div class="quick-stat-item">
+                <div class="quick-stat-value">{{ statistics.volatility.toFixed(1) }}%</div>
+                <div class="quick-stat-label">波动率</div>
             </div>
         </div>
 
@@ -21,56 +65,159 @@
             <div class="stat-card">
                 <div class="stat-label">平均值</div>
                 <div class="stat-value">{{ statistics.mean }}</div>
+                <div class="stat-trend">{{ getDataUnit() }}</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">最大值</div>
                 <div class="stat-value">{{ statistics.max }}</div>
+                <div class="stat-trend">峰值</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">最小值</div>
                 <div class="stat-value">{{ statistics.min }}</div>
+                <div class="stat-trend">谷值</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">总数</div>
+                <div class="stat-label">总计</div>
                 <div class="stat-value">{{ statistics.sum }}</div>
+                <div class="stat-trend">累计</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">标准差</div>
                 <div class="stat-value">{{ statistics.stdDev }}</div>
+                <div class="stat-trend">离散度</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">中位数</div>
+                <div class="stat-value">{{ statistics.median }}</div>
+                <div class="stat-trend">中值</div>
+            </div>
+        </div>
+
+        <!-- 对比分析 -->
+        <div class="comparison-section">
+            <h3>数据对比分析</h3>
+            <div class="comparison-controls">
+                <el-radio-group v-model="comparisonPeriod" size="small">
+                    <el-radio-button value="week">周对比</el-radio-button>
+                    <el-radio-button value="month">月对比</el-radio-button>
+                    <el-radio-button value="quarter">季度对比</el-radio-button>
+                </el-radio-group>
+                <button class="edit-btn small" @click="generateComparisonData">
+                    生成对比数据
+                </button>
+            </div>
+            <div class="comparison-stats">
+                <div class="comparison-item">
+                    <div class="comparison-label">当前周期</div>
+                    <div class="comparison-value current">{{ currentPeriodSum }}</div>
+                </div>
+                <div class="comparison-item">
+                    <div class="comparison-label">上个周期</div>
+                    <div class="comparison-value previous">{{ previousPeriodSum }}</div>
+                </div>
+                <div class="comparison-item">
+                    <div class="comparison-label">增长率</div>
+                    <div class="comparison-value" :class="growthRateClass">
+                        {{ growthRate > 0 ? '+' : '' }}{{ growthRate.toFixed(1) }}%
+                    </div>
+                </div>
             </div>
         </div>
 
         <!-- 图表容器 -->
         <div class="chart-container">
-            <h2>当前数据</h2>
+            <div class="chart-header">
+                <h2>{{ getChartTitle() }}</h2>
+                <div class="chart-controls">
+                    <el-radio-group v-model="chartType" size="small">
+                        <el-radio-button value="line">折线图</el-radio-button>
+                        <el-radio-button value="bar">柱状图</el-radio-button>
+                        <el-radio-button value="area">面积图</el-radio-button>
+                    </el-radio-group>
+                </div>
+            </div>
             <v-chart class="map-chart" :option="mapOptions" />
         </div>
         <br><br><br>
         <div class="predict-chart-container">
-            <div style="display: flex; gap: 20px; align-items: center;">
-                <h2>未来趋势</h2>
-                <el-radio-group v-model="ModelMethod" style="border: 1px solid black; padding: 5px; border-radius:15px;">
-                    <el-radio value="1" size="large">线性回归</el-radio>
-                    <el-radio value="2" size="large">指数回归</el-radio>
-                    <el-radio value="3" size="large">多项式回归</el-radio>
-                    <el-radio value="4" size="large">ARIMA回归</el-radio>
-                </el-radio-group>
+            <div style="display: flex; gap: 20px; align-items: center; justify-content: space-between;">
+                <div style="display: flex; gap: 20px; align-items: center;">
+                    <h2>未来趋势预测</h2>
+                    <el-radio-group v-model="ModelMethod" style="border: 1px solid #dccc13; padding: 5px; border-radius:15px;">
+                        <el-radio value="1" size="large">线性回归</el-radio>
+                        <el-radio value="2" size="large">指数回归</el-radio>
+                        <el-radio value="3" size="large">多项式回归</el-radio>
+                        <el-radio value="4" size="large">ARIMA回归</el-radio>
+                    </el-radio-group>
+                </div>
+                <div class="prediction-controls">
+                    <el-input-number v-model="predictionDays" :min="1" :max="30" size="small" />
+                    <span style="margin-left: 10px; color: #666;">天</span>
+                </div>
+            </div>
+            <br>
+            <div class="prediction-accuracy">
+                <div class="accuracy-item">
+                    <span>预测准确度: </span>
+                    <span class="accuracy-value">{{ predictionAccuracy.toFixed(1) }}%</span>
+                </div>
+                <div class="accuracy-item">
+                    <span>置信区间: </span>
+                    <span class="confidence-value">95%</span>
+                </div>
             </div>
             <v-chart class="map-chart" :option="predictOptions" />
+        </div>
+
+        <!-- 数据洞察面板 -->
+        <div class="insights-panel">
+            <h3>数据洞察</h3>
+            <br>
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <div class="insight-icon">📈</div>
+                    <div class="insight-content">
+                        <h4>趋势分析</h4>
+                        <p>{{ getTrendInsight() }}</p>
+                    </div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-icon">🎯</div>
+                    <div class="insight-content">
+                        <h4>异常检测</h4>
+                        <p>{{ getAnomalyInsight() }}</p>
+                    </div>
+                </div>
+                <div class="insight-card">
+                    <div class="insight-icon">💡</div>
+                    <div class="insight-content">
+                        <h4>建议</h4>
+                        <p>{{ getRecommendation() }}</p>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- 编辑数据对话框 -->
         <div v-if="showEditDialog" class="dialog-overlay" @click="closeDialog">
             <div class="dialog" @click.stop>
                 <div class="dialog-header">
-                    <h3>编辑数据</h3>
+                    <h3>编辑{{ getDataUnit() }}数据</h3>
                     <button class="close-btn" @click="closeDialog">×</button>
                 </div>
                 <div class="dialog-content">
-                    <div class="input-group" v-for="(value, index) in tempChartData" :key="index">
-                        <label>数据点 {{ index + 1 }}:</label>
-                        <input type="number" v-model.number="tempChartData[index]" class="data-input" />
+                    <div class="batch-operations">
+                        <button class="batch-btn" @click="batchMultiply">批量乘以2</button>
+                        <button class="batch-btn" @click="batchAdd">批量加100</button>
+                        <button class="batch-btn" @click="resetData">重置数据</button>
                     </div>
+                    <div class="input-group" v-for="(value, index) in tempChartData" :key="index">
+                        <label>{{ getDataTypeLabel() }} {{ index + 1 }}:</label>
+                        <input type="number" v-model.number="tempChartData[index]" class="data-input" />
+                        <button class="delete-point-btn" @click="deleteDataPoint(index)">×</button>
+                    </div>
+                    <button class="add-point-btn" @click="addDataPoint">+ 添加数据点</button>
                 </div>
                 <div class="dialog-footer">
                     <button class="cancel-btn" @click="closeDialog">取消</button>
@@ -86,7 +233,7 @@ import { ref, computed, watch } from 'vue';
 import VChart from 'vue-echarts';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
-import { LineChart } from 'echarts/charts';
+import { LineChart, BarChart } from 'echarts/charts';
 import {
     TitleComponent,
     TooltipComponent,
@@ -95,97 +242,328 @@ import {
 } from 'echarts/components';
 import * as echarts from 'echarts/core';
 
-const ModelMethod = ref('1')
+// 新增响应式数据
+const dataType = ref('amount');
+const chartType = ref('line');
+const dateRange = ref([]);
+const comparisonPeriod = ref('week');
+const predictionDays = ref(5);
+const showEditDialog = ref(false);
+
+// 数据集合
+const originalData = ref({
+    amount: [120, 132, 301, 134, 90, 230, 210, 100, 400],
+    count: [45, 52, 68, 41, 33, 78, 65, 48, 89],
+    customers: [28, 31, 45, 29, 21, 42, 38, 26, 56]
+});
+
+const chartData = computed(() => originalData.value[dataType.value]);
+const tempChartData = ref([...chartData.value]);
+
+const ModelMethod = ref('1');
+const { graphic } = echarts;
 
 // 注册必要的组件
 use([
     CanvasRenderer,
     LineChart,
+    BarChart,
     TitleComponent,
     TooltipComponent,
     LegendComponent,
     GridComponent
 ]);
 
-const { graphic } = echarts;
-
-// 响应式数据
-const chartData = ref([120, 132, 301, 134, 90, 230, 210, 100, 400]);
-const showEditDialog = ref(false);
-const tempChartData = ref([...chartData.value]);
-
-// 计算统计信息
+// 增强的统计信息
 const statistics = computed(() => {
     const data = chartData.value;
     const sum = data.reduce((acc, val) => acc + val, 0);
     const mean = Math.round((sum / data.length) * 100) / 100;
     const max = Math.max(...data);
     const min = Math.min(...data);
+    
+    // 中位数
+    const sorted = [...data].sort((a, b) => a - b);
+    const median = sorted.length % 2 === 0 
+        ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+        : sorted[Math.floor(sorted.length / 2)];
 
-    // 计算方差
+    // 方差和标准差
     const variance = Math.round((data.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / data.length) * 100) / 100;
-
-    // 计算标准差
     const stdDev = Math.round(Math.sqrt(variance) * 100) / 100;
 
+    // 增长率
+    const growth = data.length > 1 ? 
+        ((data[data.length - 1] - data[data.length - 2]) / data[data.length - 2]) * 100 : 0;
+
+    // 波动率 (变异系数)
+    const volatility = mean !== 0 ? (stdDev / mean) * 100 : 0;
+
     return {
-        mean,
+        mean: Math.round(mean),
         max,
         min,
         sum,
-        stdDev
+        stdDev,
+        median: Math.round(median),
+        growth,
+        volatility
     };
 });
 
-// 图表配置
-const mapOptions = computed(() => ({
-    xAxis: {
-        type: 'category',
-        boundaryGap: false,
-        data: chartData.value.map((_, index) => `${index + 1}`),
-    },
-    yAxis: {
-        type: 'value',
-    },
-    grid: {
-        top: '5%',
-        left: '3%',
-        right: '3%',
-        bottom: '5%',
-        containLabel: true,
-    },
-    color: ['#1976d2'],
-    tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(0,0,0,0.8)',
-        borderColor: '#1976d2',
-        textStyle: {
-            color: '#fff'
-        }
-    },
-    series: [
-        {
-            type: 'line',
-            areaStyle: {
-                color: new graphic.LinearGradient(0, 0, 0, 1, [
-                    {
-                        offset: 0,
-                        color: 'rgba(25, 118, 210, 0.8)',
-                    },
-                    {
-                        offset: 1,
-                        color: 'rgba(25, 118, 210, 0)',
-                    },
-                ]),
-            },
-            lineStyle: {
-                width: 4,
-            },
-            symbolSize: 8,
+// 趋势分析
+const trendAnalysis = computed(() => {
+    const data = chartData.value;
+    if (data.length < 2) return { direction: 'stable', percentage: 0 };
+    
+    const recent = data.slice(-3);
+    const early = data.slice(0, 3);
+    
+    const recentAvg = recent.reduce((sum, val) => sum + val, 0) / recent.length;
+    const earlyAvg = early.reduce((sum, val) => sum + val, 0) / early.length;
+    
+    const percentage = earlyAvg !== 0 ? ((recentAvg - earlyAvg) / earlyAvg) * 100 : 0;
+    
+    return {
+        direction: percentage > 5 ? 'up' : percentage < -5 ? 'down' : 'stable',
+        percentage
+    };
+});
+
+const trendDirection = computed(() => {
+    const trend = trendAnalysis.value.direction;
+    return trend === 'up' ? '↗' : trend === 'down' ? '↘' : '→';
+});
+
+const trendClass = computed(() => {
+    return `trend-${trendAnalysis.value.direction}`;
+});
+
+const trendPercentage = computed(() => trendAnalysis.value.percentage);
+
+const periodLabel = computed(() => {
+    const labels = { week: '周', month: '月', quarter: '季度' };
+    return labels[comparisonPeriod.value] || '周期';
+});
+
+// 对比数据
+const currentPeriodSum = computed(() => {
+    const data = chartData.value;
+    const halfLength = Math.floor(data.length / 2);
+    return data.slice(halfLength).reduce((sum, val) => sum + val, 0);
+});
+
+const previousPeriodSum = computed(() => {
+    const data = chartData.value;
+    const halfLength = Math.floor(data.length / 2);
+    return data.slice(0, halfLength).reduce((sum, val) => sum + val, 0);
+});
+
+const growthRate = computed(() => {
+    return previousPeriodSum.value !== 0 
+        ? ((currentPeriodSum.value - previousPeriodSum.value) / previousPeriodSum.value) * 100
+        : 0;
+});
+
+const growthRateClass = computed(() => {
+    return growthRate.value > 0 ? 'positive' : growthRate.value < 0 ? 'negative' : 'neutral';
+});
+
+const predictionAccuracy = computed(() => {
+    // 模拟预测准确度计算
+    const baseAccuracy = 85;
+    const dataLength = chartData.value.length;
+    const variability = statistics.value.volatility;
+    
+    let accuracy = baseAccuracy - Math.min(variability * 0.5, 20) + Math.min(dataLength * 2, 10);
+    return Math.max(60, Math.min(95, accuracy));
+});
+
+// 工具函数
+const getDataUnit = () => {
+    const units = { amount: '元', count: '单', customers: '人' };
+    return units[dataType.value] || '';
+};
+
+const getDataTypeLabel = () => {
+    const labels = { amount: '订单金额', count: '订单数量', customers: '客户数' };
+    return labels[dataType.value] || '数据';
+};
+
+const getChartTitle = () => {
+    const titles = { 
+        amount: '订单金额趋势', 
+        count: '订单数量趋势', 
+        customers: '客户数量趋势' 
+    };
+    return titles[dataType.value] || '数据趋势';
+};
+
+// 数据操作方法
+const switchDataType = () => {
+    tempChartData.value = [...chartData.value];
+};
+
+const insertRandomData = () => {
+    const ranges = {
+        amount: [50, 500],
+        count: [20, 100],
+        customers: [10, 80]
+    };
+    const [min, max] = ranges[dataType.value];
+    const newValue = Math.floor(Math.random() * (max - min + 1)) + min;
+    originalData.value[dataType.value].push(newValue);
+};
+
+const exportData = () => {
+    const data = chartData.value;
+    const csv = data.map((value, index) => `${index + 1},${value}`).join('\n');
+    const blob = new Blob([`序号,${getDataTypeLabel()}\n${csv}`], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${getDataTypeLabel()}_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+};
+
+const refreshData = () => {
+    // 模拟数据刷新
+    const ranges = {
+        amount: [80, 450],
+        count: [25, 95],
+        customers: [15, 75]
+    };
+    const [min, max] = ranges[dataType.value];
+    originalData.value[dataType.value] = originalData.value[dataType.value].map(() => 
+        Math.floor(Math.random() * (max - min + 1)) + min
+    );
+};
+
+const filterDataByDate = () => {
+    // 模拟日期筛选逻辑
+    if (dateRange.value && dateRange.value.length === 2) {
+        console.log('筛选日期范围:', dateRange.value);
+        // 这里可以实现真实的日期筛选逻辑
+    }
+};
+
+const generateComparisonData = () => {
+    // 模拟生成对比数据
+    console.log('生成', comparisonPeriod.value, '对比数据');
+};
+
+// 批量操作
+const batchMultiply = () => {
+    tempChartData.value = tempChartData.value.map(val => Math.round(val * 2));
+};
+
+const batchAdd = () => {
+    tempChartData.value = tempChartData.value.map(val => val + 100);
+};
+
+const resetData = () => {
+    tempChartData.value = [120, 132, 301, 134, 90, 230, 210, 100, 400];
+};
+
+const deleteDataPoint = (index) => {
+    tempChartData.value.splice(index, 1);
+};
+
+const addDataPoint = () => {
+    const ranges = {
+        amount: [50, 500],
+        count: [20, 100],
+        customers: [10, 80]
+    };
+    const [min, max] = ranges[dataType.value];
+    tempChartData.value.push(Math.floor(Math.random() * (max - min + 1)) + min);
+};
+
+// 洞察分析
+const getTrendInsight = () => {
+    const trend = trendAnalysis.value;
+    if (trend.direction === 'up') {
+        return `数据呈上升趋势，增长${Math.abs(trend.percentage).toFixed(1)}%，表现良好。`;
+    } else if (trend.direction === 'down') {
+        return `数据呈下降趋势，下降${Math.abs(trend.percentage).toFixed(1)}%，需要关注。`;
+    }
+    return '数据相对稳定，波动较小。';
+};
+
+const getAnomalyInsight = () => {
+    const data = chartData.value;
+    const mean = statistics.value.mean;
+    const stdDev = statistics.value.stdDev;
+    const anomalies = data.filter(val => Math.abs(val - mean) > 2 * stdDev);
+    
+    if (anomalies.length > 0) {
+        return `检测到${anomalies.length}个异常值，建议进一步分析原因。`;
+    }
+    return '未检测到明显异常值，数据质量良好。';
+};
+
+const getRecommendation = () => {
+    const growth = statistics.value.growth;
+    const volatility = statistics.value.volatility;
+    
+    if (growth > 10 && volatility < 20) {
+        return '保持当前策略，继续扩大市场份额。';
+    } else if (growth < -10) {
+        return '建议优化营销策略，提升业务表现。';
+    } else if (volatility > 30) {
+        return '数据波动较大，建议稳定业务流程。';
+    }
+    return '继续监控关键指标，优化业务策略。';
+};
+
+// 增强的图表配置
+const mapOptions = computed(() => {
+    const baseOption = {
+        xAxis: {
+            type: 'category',
+            boundaryGap: chartType.value === 'bar',
+            data: chartData.value.map((_, index) => `${index + 1}`),
+        },
+        yAxis: {
+            type: 'value',
+            name: getDataUnit(),
+        },
+        grid: {
+            top: '5%',
+            left: '3%',
+            right: '3%',
+            bottom: '5%',
+            containLabel: true,
+        },
+        color: ['#1976d2'],
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            borderColor: '#1976d2',
+            textStyle: { color: '#fff' },
+            formatter: (params) => {
+                const point = params[0];
+                return `${getDataTypeLabel()}: ${point.value}${getDataUnit()}`;
+            }
+        },
+        series: [{
+            type: chartType.value === 'area' ? 'line' : chartType.value,
             data: chartData.value,
-        }
-    ],
-}));
+            smooth: chartType.value === 'line',
+            symbolSize: 8,
+            lineStyle: chartType.value === 'line' ? { width: 4 } : undefined,
+            areaStyle: chartType.value === 'area' ? {
+                color: new graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: 'rgba(25, 118, 210, 0.8)' },
+                    { offset: 1, color: 'rgba(25, 118, 210, 0)' }
+                ])
+            } : undefined
+        }]
+    };
+    
+    return baseOption;
+});
 
 // 线性回归预测
 function linearRegression(data) {
@@ -298,51 +676,44 @@ const predictData = computed(() => {
     const data = chartData.value;
     const predictions = [];
 
-    // 确保有足够的数据进行预测
-    if (data.length < 3) return Array(5).fill(data[data.length - 1] || 0);
+    if (data.length < 3) return Array(predictionDays.value).fill(data[data.length - 1] || 0);
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < predictionDays.value; i++) {
         let predictedValue;
         const currentData = [...data, ...predictions];
-        const len = currentData.length;
 
         switch (ModelMethod.value) {
-            case '1': // 线性回归
+            case '1':
                 predictedValue = linearRegression(currentData);
                 break;
-            case '2': // 指数平滑
+            case '2':
                 predictedValue = exponentialSmoothing(currentData, 0.3);
                 break;
-            case '3': // 多项式回归 (二次)
+            case '3':
                 predictedValue = polynomialRegression(currentData, 2);
                 break;
-            case '4': // ARIMA简化版本
+            case '4':
                 predictedValue = arimaSimplified(currentData);
                 break;
         }
 
-        // 季节性调整 (模拟周期性波动)
-        const seasonalFactor = Math.sin((len + i) * Math.PI / 6) * 0.1 + 1;
+        const seasonalFactor = Math.sin((currentData.length + i) * Math.PI / 6) * 0.1 + 1;
         predictedValue *= seasonalFactor;
 
-        // 趋势衰减 (距离越远，趋势影响越小)
         const trendDecay = Math.exp(-i * 0.1);
         const baseline = currentData.slice(-Math.min(5, currentData.length))
             .reduce((sum, val) => sum + val, 0) / Math.min(5, currentData.length);
 
         predictedValue = baseline + (predictedValue - baseline) * trendDecay;
 
-        // 添加渐减的随机噪声
         const noiseIntensity = 15 * Math.exp(-i * 0.3);
         const noise = (Math.random() - 0.5) * noiseIntensity;
 
-        // 确保预测值合理
         predictedValue = Math.max(0, Math.round(predictedValue + noise));
 
-        // 异常值检测和修正
         if (predictions.length > 0) {
             const lastPrediction = predictions[predictions.length - 1];
-            const maxChange = Math.abs(lastPrediction * 0.3); // 最大变化30%
+            const maxChange = Math.abs(lastPrediction * 0.3);
 
             if (Math.abs(predictedValue - lastPrediction) > maxChange) {
                 const direction = predictedValue > lastPrediction ? 1 : -1;
@@ -360,13 +731,14 @@ const predictOptions = computed(() => ({
     xAxis: {
         type: 'category',
         boundaryGap: false,
-        data: predictData.value.map((_, index) => `${index + chartData.value.length + 1}`),
+        data: predictData.value.map((_, index) => `预测${index + 1}`),
     },
     yAxis: {
         type: 'value',
+        name: getDataUnit(),
     },
     grid: {
-        top: '5%',
+        top: '10%',
         left: '3%',
         right: '3%',
         bottom: '5%',
@@ -377,33 +749,25 @@ const predictOptions = computed(() => ({
         trigger: 'axis',
         backgroundColor: 'rgba(0,0,0,0.8)',
         borderColor: '#dccc13',
-        textStyle: {
-            color: '#fff'
+        textStyle: { color: '#fff' },
+        formatter: (params) => {
+            const point = params[0];
+            return `预测${getDataTypeLabel()}: ${point.value}${getDataUnit()}`;
         }
     },
-    series: [
-        {
-            type: 'line',
-            areaStyle: {
-                color: new graphic.LinearGradient(0, 0, 0, 1, [
-                    {
-                        offset: 0,
-                        color: 'rgba(255, 246, 143, 0.8)',
-                    },
-                    {
-                        offset: 1,
-                        color: 'rgba(255, 246, 143, 0)',
-                    },
-                ]),
-            },
-            smooth: true,
-            lineStyle: {
-                width: 4,
-            },
-            symbolSize: 8,
-            data: predictData.value,
-        }
-    ],
+    series: [{
+        type: 'line',
+        areaStyle: {
+            color: new graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: 'rgba(255, 246, 143, 0.8)' },
+                { offset: 1, color: 'rgba(255, 246, 143, 0)' }
+            ])
+        },
+        smooth: true,
+        lineStyle: { width: 4 },
+        symbolSize: 8,
+        data: predictData.value,
+    }]
 }));
 
 // 方法
@@ -413,7 +777,7 @@ const closeDialog = () => {
 };
 
 const saveData = () => {
-    chartData.value = [...tempChartData.value];
+    originalData.value[dataType.value] = [...tempChartData.value];
     showEditDialog.value = false;
 };
 
@@ -438,12 +802,18 @@ watch(showEditDialog, (newVal) => {
     align-items: center;
     margin-bottom: 20px;
     padding: 0 10px;
+    flex-wrap: wrap;
+    gap: 15px;
 }
 
 .title {
     color: #1565c0;
     margin: 0;
     font-weight: 600;
+}
+
+.date-filter {
+    min-width: 250px;
 }
 
 .edit-btn {
@@ -458,15 +828,53 @@ watch(showEditDialog, (newVal) => {
     box-shadow: 0 2px 8px rgba(25, 118, 210, 0.3);
 }
 
+.edit-btn.small {
+    padding: 5px 15px;
+    font-size: 12px;
+}
+
 .edit-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 15px rgba(25, 118, 210, 0.4);
     background: linear-gradient(45deg, #1565c0, #2196f3);
 }
 
+/* 快速统计 */
+.quick-stats {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.quick-stat-item {
+    background: white;
+    padding: 15px 20px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(25, 118, 210, 0.1);
+    text-align: center;
+    min-width: 120px;
+}
+
+.quick-stat-value, .trend-indicator {
+    font-size: 20px;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.quick-stat-label {
+    font-size: 12px;
+    color: #666;
+}
+
+.trend-up { color: #4caf50; }
+.trend-down { color: #f44336; }
+.trend-stable { color: #ff9800; }
+
+/* 统计卡片增强 */
 .stats-container {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 15px;
     margin-bottom: 25px;
 }
@@ -497,22 +905,115 @@ watch(showEditDialog, (newVal) => {
     font-size: 24px;
     font-weight: bold;
     color: #1976d2;
+    margin-bottom: 5px;
 }
 
-.chart-container {
+.stat-trend {
+    font-size: 12px;
+    color: #999;
+}
+
+/* 对比分析 */
+.comparison-section {
     background: white;
     padding: 20px;
     border-radius: 12px;
     box-shadow: 0 2px 10px rgba(25, 118, 210, 0.1);
+    margin-bottom: 25px;
+}
+
+.comparison-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.comparison-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 20px;
+}
+
+.comparison-item {
+    text-align: center;
+}
+
+.comparison-label {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 8px;
+}
+
+.comparison-value {
+    font-size: 24px;
+    font-weight: bold;
+}
+
+.comparison-value.current { color: #1976d2; }
+.comparison-value.previous { color: #666; }
+.comparison-value.positive { color: #4caf50; }
+.comparison-value.negative { color: #f44336; }
+.comparison-value.neutral { color: #ff9800; }
+
+/* 图表容器增强 */
+.chart-container, .predict-chart-container {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(25, 118, 210, 0.1);
+    margin-bottom: 25px;
+}
+
+.chart-container {
     border: 3px solid #1976d2;
 }
 
 .predict-chart-container {
-    background: white;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(25, 118, 210, 0.1);
     border: 3px solid #dccc13;
+}
+
+.chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.chart-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.prediction-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.prediction-accuracy {
+    display: flex;
+    gap: 30px;
+    margin-bottom: 15px;
+    padding: 10px;
+    background: #f5f5f5;
+    border-radius: 8px;
+}
+
+.accuracy-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.accuracy-value {
+    font-weight: bold;
+    color: #4caf50;
+}
+
+.confidence-value {
+    font-weight: bold;
+    color: #2196f3;
 }
 
 .map-chart {
@@ -520,6 +1021,50 @@ watch(showEditDialog, (newVal) => {
     height: 400px;
 }
 
+/* 数据洞察面板 */
+.insights-panel {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(25, 118, 210, 0.1);
+    margin-bottom: 25px;
+}
+
+.insights-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.insight-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 15px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #1976d2;
+}
+
+.insight-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.insight-content h4 {
+    margin: 0 0 8px 0;
+    color: #1976d2;
+    font-size: 16px;
+}
+
+.insight-content p {
+    margin: 0;
+    color: #666;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+/* 对话框增强 */
 .dialog-overlay {
     position: fixed;
     top: 0;
@@ -538,7 +1083,7 @@ watch(showEditDialog, (newVal) => {
     background: white;
     border-radius: 15px;
     width: 90%;
-    max-width: 500px;
+    max-width: 600px;
     max-height: 80vh;
     overflow: hidden;
     box-shadow: 0 10px 30px rgba(25, 118, 210, 0.3);
@@ -585,10 +1130,34 @@ watch(showEditDialog, (newVal) => {
     overflow-y: auto;
 }
 
+.batch-operations {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.batch-btn {
+    padding: 8px 15px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background: #f8f9fa;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 12px;
+}
+
+.batch-btn:hover {
+    background: #e9ecef;
+    border-color: #1976d2;
+}
+
 .input-group {
     display: flex;
     align-items: center;
     margin-bottom: 15px;
+    gap: 10px;
 }
 
 .input-group label {
@@ -610,6 +1179,36 @@ watch(showEditDialog, (newVal) => {
     outline: none;
     border-color: #1976d2;
     box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+}
+
+.delete-point-btn {
+    background: #f44336;
+    color: white;
+    border: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.add-point-btn {
+    width: 100%;
+    padding: 10px;
+    border: 2px dashed #1976d2;
+    background: none;
+    color: #1976d2;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: all 0.3s ease;
+}
+
+.add-point-btn:hover {
+    background: #e3f2fd;
 }
 
 .dialog-footer {
@@ -652,5 +1251,30 @@ watch(showEditDialog, (newVal) => {
     background: linear-gradient(45deg, #1565c0, #2196f3);
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(25, 118, 210, 0.4);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .quick-stats {
+        flex-direction: column;
+    }
+    
+    .comparison-stats {
+        grid-template-columns: 1fr;
+    }
+    
+    .chart-header {
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .insights-grid {
+        grid-template-columns: 1fr;
+    }
 }
 </style>
